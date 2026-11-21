@@ -1,9 +1,11 @@
 import os
+import time
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.core.database import init_db
@@ -26,6 +28,69 @@ logging.basicConfig(
 )
 logger = logging.getLogger("tierlens")
 
+
+# =====================================================================
+# Middleware: Security Headers & CSP
+# =====================================================================
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+
+        # Allow Swagger UI / ReDoc to load CDN assets
+        path = request.url.path
+        if path.startswith("/docs") or path.startswith("/redoc") or path.startswith("/openapi.json"):
+            csp_policy = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https://fastapi.tiangolo.com; "
+                "connect-src 'self' https:;"
+            )
+        else:
+            # API & Artifacts CSP Policy
+            csp_policy = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https: blob:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' https://hackfront-plum.vercel.app https://hackfront-ckpg.onrender.com https:; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
+                "frame-ancestors 'none';"
+            )
+
+        # Security Headers matching your vercel.json specification
+        response.headers["Content-Security-Policy"] = csp_policy
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        response.headers["X-DNS-Prefetch-Control"] = "off"
+        response.headers["X-XSS-Protection"] = "0"
+        # Crucial for cross-origin API and artifact downloads:
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+
+        return response
+
+
+# =====================================================================
+# Middleware: Performance / Latency Timing
+# =====================================================================
+class ProcessTimeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.perf_counter()
+        response = await call_next(request)
+        process_time = time.perf_counter() - start_time
+        response.headers["X-Process-Time"] = f"{process_time:.4f}s"
+        return response
+
+
+# =====================================================================
+# Application Lifespan
+# =====================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -75,6 +140,7 @@ async def lifespan(app: FastAPI):
     await neo4j_manager.close()
     await redis_manager.close()
 
+
 app = FastAPI(
     title="TierLens API",
     description="Application Performance & Device Intelligence Platform",
@@ -82,16 +148,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware - Support all origins securely with credentials by matching any http/https origin
+# =====================================================================
+# Middleware Stack (Execution order: Top to Bottom)
+# =====================================================================
+
+# 1. CORS Middleware (Applied outermost to ensure headers exist on all responses and preflight OPTIONS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=[
+        "https://hackfront-plum.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Process-Time"],
 )
 
-# Static Files for Artifacts
+# 2. Security Headers & CSP Middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 3. Process Time Latency Middleware
+app.add_middleware(ProcessTimeMiddleware)
+
+
+# =====================================================================
+# Static Files & Routes
+# =====================================================================
 os.makedirs(settings.ARTIFACTS_DIR, exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=settings.ARTIFACTS_DIR), name="artifacts")
 
