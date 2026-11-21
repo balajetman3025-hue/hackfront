@@ -1,3 +1,5 @@
+const RENDER_BACKEND_URL = "https://hackfront-ckpg.onrender.com";
+
 function getApiBase(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (typeof window !== "undefined") {
@@ -6,12 +8,12 @@ function getApiBase(): string {
       return (envUrl && envUrl.includes("localhost")) ? envUrl.replace(/\/+$/, "") : "http://localhost:8000";
     }
   }
-  // For all other devices, other laptops, mobile browsers, and production cloud:
+  // For all other devices, other laptops, mobile browsers, and production cloud (e.g. Vercel):
   // Directly connect to the live Render backend
   if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
     return envUrl.replace(/\/+$/, "");
   }
-  return "https://tierlens.onrender.com";
+  return RENDER_BACKEND_URL;
 }
 
 export class ApiClient {
@@ -66,19 +68,19 @@ export class ApiClient {
       });
     } catch (netErr: any) {
       // If primary endpoint (e.g. localhost) is offline or unreachable, fall back to live Render backend
-      if (base !== "https://tierlens.onrender.com") {
+      if (base !== RENDER_BACKEND_URL) {
         try {
-          res = await fetch(`https://tierlens.onrender.com${endpoint}`, {
+          res = await fetch(`${RENDER_BACKEND_URL}${endpoint}`, {
             ...options,
             headers,
           });
         } catch {
-          console.error(`Both local (${base}) and live Render API failed for ${endpoint}:`, netErr);
-          throw new Error("Unable to connect to TierLens API server. Please check backend connection.");
+          console.error(`Both local (${base}) and live Render API (${RENDER_BACKEND_URL}) failed for ${endpoint}:`, netErr);
+          throw new Error(`Unable to connect to TierLens API server at ${RENDER_BACKEND_URL}. Please check backend connection.`);
         }
       } else {
         console.error(`Network fetch failed for ${base}${endpoint}:`, netErr);
-        throw new Error("Unable to connect to TierLens API server. Please check backend connection.");
+        throw new Error(`Unable to connect to TierLens API server at ${base}. Please ensure backend is awake.`);
       }
     }
 
@@ -117,9 +119,47 @@ export class ApiClient {
     return res.json();
   }
 
-  // Health
+  // Health & Ping
   static getHealth() {
     return this.request("/api/v1/system/health");
+  }
+
+  static async ping(): Promise<{ ok: boolean; latencyMs: number; base: string; error?: string }> {
+    const start = performance.now();
+    const base = getApiBase();
+    try {
+      const res = await fetch(`${base}/health`, { cache: "no-store" });
+      const latencyMs = Math.round(performance.now() - start);
+      return { ok: res.ok, latencyMs, base };
+    } catch (err: any) {
+      const latencyMs = Math.round(performance.now() - start);
+      return { ok: false, latencyMs, base, error: err.message };
+    }
+  }
+
+  // Auth & Auto-auth
+  static async ensureAuthenticated(): Promise<string | null> {
+    const existing = this.getToken();
+    if (existing) return existing;
+    try {
+      const auth = await this.login({ email: "demo@tierlens.com", password: "Password123!" });
+      if (auth && auth.access_token) {
+        this.setToken(auth.access_token);
+        return auth.access_token;
+      }
+    } catch {
+      // If demo user is missing on remote, attempt register then login
+      try {
+        const reg = await this.register({ email: "demo@tierlens.com", password: "Password123!", full_name: "TierLens Demo User" });
+        if (reg && reg.access_token) {
+          this.setToken(reg.access_token);
+          return reg.access_token;
+        }
+      } catch (regErr) {
+        console.warn("Auto-auth registration fallback:", regErr);
+      }
+    }
+    return null;
   }
 
   // Auth

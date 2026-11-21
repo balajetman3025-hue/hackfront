@@ -58,10 +58,14 @@ import {
   Legend
 } from "recharts";
 import IntelligenceGraph from "@/components/IntelligenceGraph";
+import CrazyView from "@/components/CrazyView";
+import ChatBot from "@/components/ChatBot";
+import { soundFX } from "@/lib/audio";
 import { ApiClient } from "@/lib/api";
 
 type TabType =
   | "overview"
+  | "crazy_view"
   | "web_test"
   | "device_builder"
   | "android_test"
@@ -330,11 +334,17 @@ export default function TierLensApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navigateToTab = (tab: any) => {
+    soundFX.playClick();
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
   const [systemHealth, setSystemHealth] = useState<any>(null);
   const [deviceLabStatus, setDeviceLabStatus] = useState<any>(null);
+  const [backendPing, setBackendPing] = useState<{ ok: boolean; latencyMs: number; base: string }>({
+    ok: true,
+    latencyMs: 40,
+    base: "https://hackfront-ckpg.onrender.com",
+  });
 
   // Web Testing Form State
   const [testUrl, setTestUrl] = useState("https://example.com");
@@ -503,6 +513,11 @@ export default function TierLensApp() {
   };
 
   const refreshHealth = async () => {
+    try {
+      const ping = await ApiClient.ping();
+      setBackendPing(ping);
+    } catch {}
+
     try {
       const health = await ApiClient.getHealth();
       setSystemHealth(health);
@@ -989,6 +1004,20 @@ export default function TierLensApp() {
               Main Dashboard
             </button>
             <button
+              onClick={() => navigateToTab("crazy_view")}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                activeTab === "crazy_view"
+                  ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-600 border border-cyan-400 font-bold shadow-sm"
+                  : "text-cyan-700 bg-cyan-50/70 hover:bg-cyan-100 hover:text-cyan-900 border border-cyan-200/80"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-cyan-500 animate-pulse shrink-0" />
+              <span>Holographic 3D View</span>
+              <span className="ml-auto text-[9px] bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold px-1.5 py-0.5 rounded-full shadow-xs">
+                CRAZY
+              </span>
+            </button>
+            <button
               onClick={() => navigateToTab("web_test")}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "web_test" ? "bg-blue-50 text-blue-600 border border-blue-200 font-semibold" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -1122,7 +1151,7 @@ export default function TierLensApp() {
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50">
         {/* TOP STATUS BAR */}
-        <header className="h-14 lg:h-12 border-b border-slate-200 bg-white/95 backdrop-blur px-3 sm:px-6 flex items-center justify-between shrink-0 gap-2">
+        <header className="h-14 border-b border-slate-200 bg-white/95 backdrop-blur px-3 sm:px-6 flex items-center justify-between shrink-0 gap-2">
           <div className="flex items-center gap-2 sm:gap-3 text-xs overflow-x-auto py-1">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -1131,11 +1160,50 @@ export default function TierLensApp() {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <span className="font-semibold text-slate-700 hidden sm:inline">Environment:</span>
-            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 font-mono text-[10px] whitespace-nowrap">
-              PostgreSQL Connected
-            </span>
-            <span className={`px-2 py-0.5 rounded font-mono text-[10px] whitespace-nowrap ${
+
+            {/* Backend Connectivity Badge */}
+            <a
+              href="https://hackfront-ckpg.onrender.com/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Click to view Backend Swagger Docs on Render"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition text-[11px] font-mono text-slate-700 whitespace-nowrap group"
+            >
+              <span className={`w-2 h-2 rounded-full ${backendPing.ok ? "bg-emerald-500 animate-pulse" : "bg-amber-400"}`} />
+              <span className="font-semibold text-slate-800">Render Backend:</span>
+              <span className={backendPing.ok ? "text-emerald-700" : "text-amber-700"}>
+                {backendPing.ok ? `Online (${backendPing.latencyMs}ms)` : "Waking up..."}
+              </span>
+              <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-emerald-600 ml-0.5" />
+            </a>
+
+            {/* Vercel Frontend Link */}
+            <a
+              href="https://hackfront-plum.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden md:flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition"
+              title="Current live deployment on Vercel"
+            >
+              <Globe className="w-3 h-3 text-blue-500" />
+              <span>Vercel App</span>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+            </a>
+
+            {/* GitHub Repo Link */}
+            <a
+              href="https://github.com/balajetman3025-hue/hackfront"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition"
+              title="Source repository on GitHub"
+            >
+              <FileCode className="w-3 h-3 text-indigo-500" />
+              <span>GitHub</span>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+            </a>
+
+            <span className={`hidden xl:inline-block px-2 py-0.5 rounded font-mono text-[10px] whitespace-nowrap ${
               systemHealth?.neo4j?.connected
                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                 : "bg-slate-100 text-slate-500 border border-slate-200"
@@ -1144,12 +1212,23 @@ export default function TierLensApp() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Quick 3D Hologram Button */}
             <button
-              onClick={() => { refreshHealth(); loadProfiles(); }}
-              className="text-[11px] text-slate-500 hover:text-slate-900 flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 transition"
+              onClick={() => navigateToTab("crazy_view")}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold text-xs hover:from-cyan-400 hover:to-blue-500 shadow-md shadow-cyan-500/20 transition-all"
             >
-              <RefreshCw className="w-3 h-3" /> Refresh Diagnostics
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span>3D Hologram</span>
+            </button>
+
+            <button
+              onClick={() => { refreshHealth(); loadProfiles(); soundFX.playPing(); }}
+              className="text-[11px] text-slate-500 hover:text-slate-900 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 transition"
+              title="Re-ping backend health and reload device profiles"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
         </header>
@@ -1197,14 +1276,31 @@ export default function TierLensApp() {
                 </div>
 
                 {/* Quick Action Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                   <div
-                    onClick={() => navigateToTab("web_test")}
-                    className="p-4 rounded-lg bg-slate-50 border border-slate-200 hover:border-blue-500/50 cursor-pointer transition group"
+                    onClick={() => navigateToTab("crazy_view")}
+                    className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-slate-950 to-cyan-950 border border-cyan-500/50 hover:border-cyan-400 cursor-pointer transition group shadow-md shadow-cyan-500/10"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Globe className="w-5 h-5 text-blue-400" />
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-blue-400 transition" />
+                      <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
+                      <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                      <span>Holographic 3D View</span>
+                      <span className="text-[9px] bg-cyan-400 text-slate-950 font-black px-1.5 py-0.2 rounded">LIVE</span>
+                    </div>
+                    <p className="text-[11px] text-cyan-200/70 mt-1">
+                      Interactive 3D phone cockpit with live CPU throttling, RAM pressure & packet stream.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => navigateToTab("web_test")}
+                    className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-blue-500/50 cursor-pointer transition group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <Globe className="w-5 h-5 text-blue-500" />
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-blue-500 transition" />
                     </div>
                     <div className="font-semibold text-xs text-slate-900">Execute Multi-Device Web Test</div>
                     <p className="text-[11px] text-slate-500 mt-1">
@@ -1214,11 +1310,11 @@ export default function TierLensApp() {
 
                   <div
                     onClick={() => navigateToTab("device_builder")}
-                    className="p-4 rounded-lg bg-slate-50 border border-slate-200 hover:border-indigo-500/50 cursor-pointer transition group"
+                    className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-indigo-500/50 cursor-pointer transition group"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Sliders className="w-5 h-5 text-indigo-400" />
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 transition" />
+                      <Sliders className="w-5 h-5 text-indigo-500" />
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-indigo-500 transition" />
                     </div>
                     <div className="font-semibold text-xs text-slate-900">Device Configuration Builder</div>
                     <p className="text-[11px] text-slate-500 mt-1">
@@ -1228,11 +1324,11 @@ export default function TierLensApp() {
 
                   <div
                     onClick={() => navigateToTab("compare")}
-                    className="p-4 rounded-lg bg-slate-50 border border-slate-200 hover:border-emerald-500/50 cursor-pointer transition group"
+                    className="p-4 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-500/50 cursor-pointer transition group"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <GitCompare className="w-5 h-5 text-emerald-400" />
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition" />
+                      <GitCompare className="w-5 h-5 text-emerald-500" />
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-500 transition" />
                     </div>
                     <div className="font-semibold text-xs text-slate-900">Performance Comparison</div>
                     <p className="text-[11px] text-slate-500 mt-1">
@@ -1837,6 +1933,21 @@ export default function TierLensApp() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: CRAZY HOLOGRAPHIC 3D VIEW */}
+          {/* ========================================================================= */}
+          {activeTab === "crazy_view" && (
+            <CrazyView
+              onRunTestWithUrl={(url, tier) => {
+                setTestUrl(url);
+                setSelectedTier(tier);
+                setActiveTab("web_test");
+              }}
+              onNavigateToTab={navigateToTab}
+              backendOnline={backendPing.ok}
+            />
           )}
 
           {/* ========================================================================= */}
@@ -3031,6 +3142,17 @@ export default function TierLensApp() {
 
         </div>
       </main>
+
+      {/* Interactive AI Copilot ChatBot (Always accessible) */}
+      <ChatBot
+        onNavigateToTab={navigateToTab}
+        onRunTestWithUrl={(url, tier) => {
+          setTestUrl(url);
+          setSelectedTier(tier);
+          setActiveTab("web_test");
+        }}
+        backendOnline={backendPing.ok}
+      />
     </div>
   );
 }
