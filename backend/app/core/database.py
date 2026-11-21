@@ -1,11 +1,11 @@
 import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import create_engine, text, event
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import text, event
 from sqlalchemy.pool import NullPool
 from app.config import settings
-from app.core.db_url import mask_database_url, normalize_database_url
+from app.core.db_url import mask_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,73 +21,43 @@ def configure_sqlite_engine(engine):
         cursor.close()
     return engine
 
-# Determine active database URL (PostgreSQL by default, auto-fallback to SQLite if requested or on connection failure)
+# Determine active database URL (PostgreSQL by default, auto-fallback to SQLite if requested or on failure)
 _active_async_url = settings.DATABASE_URL
 _active_sync_url = settings.SYNC_DATABASE_URL
 _using_fallback = False
 
+def create_engine_for_url(url: str):
+    if "sqlite" in url.lower():
+        return configure_sqlite_engine(create_async_engine(
+            url,
+            echo=False,
+            future=True,
+            connect_args={"timeout": 30.0}
+        ))
+    pool_kwargs = {"poolclass": NullPool} if "-pooler" in url.lower() else {
+        "pool_size": 5,
+        "max_overflow": 5,
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+        "pool_timeout": 30.0
+    }
+    return create_async_engine(
+        url,
+        echo=False,
+        future=True,
+        **pool_kwargs
+    )
+
 def get_engine():
     global _active_async_url, _active_sync_url, _using_fallback
-    
-    # 1. Explicit SQLite only mode
     if settings.DATABASE_MODE == "sqlite_only":
         logger.info(f"Using explicitly configured SQLite database: {mask_database_url(settings.SQLITE_DATABASE_URL)}")
         _active_async_url = settings.SQLITE_DATABASE_URL
         _active_sync_url = settings.SQLITE_SYNC_DATABASE_URL
         _using_fallback = True
-        return configure_sqlite_engine(create_async_engine(
-            _active_async_url,
-            echo=False,
-            future=True,
-            connect_args={"timeout": 30.0}
-        ))
+        return create_engine_for_url(_active_async_url)
 
-    # 2. Strict PostgreSQL mode (Production)
-    if settings.DATABASE_MODE == "postgres_required" or settings.ENVIRONMENT == "production":
-        masked_url = mask_database_url(_active_async_url)
-        logger.info(f"Strict PostgreSQL mode enforced. Connecting to: {masked_url}")
-        if not _active_async_url or "sqlite" in _active_async_url.lower():
-            raise RuntimeError("Production database must be configured with a valid PostgreSQL URL.")
-        return create_async_engine(
-            _active_async_url,
-            echo=False,
-            future=True,
-            pool_size=5,
-            max_overflow=5,
-            pool_recycle=300,
-            pool_pre_ping=True,
-            pool_timeout=30.0
-        )
-
-    # 3. Auto mode (Development fallback)
-    try:
-        pool_kwargs = {"poolclass": NullPool} if "-pooler" in _active_async_url.lower() else {
-            "pool_size": 5,
-            "max_overflow": 5,
-            "pool_recycle": 300,
-            "pool_pre_ping": True,
-            "pool_timeout": 30.0
-        }
-        engine = create_async_engine(
-            _active_async_url,
-            echo=False,
-            future=True,
-            **pool_kwargs
-        )
-        return engine
-    except Exception as e:
-        if settings.SQLITE_FALLBACK_ENABLED:
-            logger.warning(f"Failed to initialize async PostgreSQL engine ({e}). Falling back to SQLite: {mask_database_url(settings.SQLITE_DATABASE_URL)}")
-            _active_async_url = settings.SQLITE_DATABASE_URL
-            _active_sync_url = settings.SQLITE_SYNC_DATABASE_URL
-            _using_fallback = True
-            return configure_sqlite_engine(create_async_engine(
-                _active_async_url,
-                echo=False,
-                future=True,
-                connect_args={"timeout": 30.0}
-            ))
-        raise e
+    return create_engine_for_url(_active_async_url)
 
 async_engine = get_engine()
 AsyncSessionLocal = async_sessionmaker(
@@ -98,19 +68,42 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False
 )
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def switch_to_sqlite():
+    """Switches active database engine to SQLite and runs schema creation."""
     global _active_async_url, _active_sync_url, _using_fallback, async_engine, AsyncSessionLocal
-    fallback_allowed = (
-        settings.SQLITE_FALLBACK_ENABLED 
-        and not _using_fallback 
-        and settings.DATABASE_MODE != "postgres_required" 
-        and settings.ENVIRONMENT != "production"
-    )
+    logger.warning("Switching active database engine to SQLite fallback...")
+    _active_async_url = settings.SQLITE_DATABASE_URL
+    _active_sync_url = settings.SQLITE_SYNC_DATABASE_URL
+    _using_fallback = True
+    async_engine = create_engine_for_url(_active_async_url)
+    AsyncSessionLocal.configure(bind=async_engine)
+    
+    # Initialize SQLite schema
+    import app.models.relational  # noqa: F401
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("SQLite schema initialized successfully.")
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    global _active_async_url, _using_fallback, AsyncSessionLocal
     try:
         async with AsyncSessionLocal() as session:
             yield session
-    except Exception:
-        raise
+    except Exception as e:
+        # Check if error is due to database connection refusal/failure
+        err_str = str(e).lower()
+        if (
+            settings.SQLITE_FALLBACK_ENABLED
+            and not _using_fallback
+            and settings.DATABASE_MODE != "postgres_required"
+            and any(k in err_str for k in ["connection refused", "111", "cannot connect", "could not connect", "connection error"])
+        ):
+            logger.warning(f"Database connection error in get_db ({e}). Executing automatic SQLite fallback...")
+            await switch_to_sqlite()
+            async with AsyncSessionLocal() as session:
+                yield session
+        else:
+            raise
 
 async def check_db_health() -> dict:
     global _active_async_url, _using_fallback
@@ -119,13 +112,12 @@ async def check_db_health() -> dict:
             result = await session.execute(text("SELECT 1"))
             val = result.scalar()
             return {
-                "status": "connected",
+                "status": "connected" if not _using_fallback else "connected_fallback",
                 "database_type": "sqlite" if "sqlite" in _active_async_url else "postgresql",
                 "is_fallback": _using_fallback,
                 "ping": val == 1
             }
     except Exception as e:
-        # Check if fallback is permitted
         fallback_allowed = (
             settings.SQLITE_FALLBACK_ENABLED 
             and not _using_fallback 
@@ -135,14 +127,7 @@ async def check_db_health() -> dict:
         if fallback_allowed:
             try:
                 logger.warning(f"PostgreSQL connection test failed ({e}). Switching to SQLite fallback...")
-                _active_async_url = settings.SQLITE_DATABASE_URL
-                _active_sync_url = settings.SQLITE_SYNC_DATABASE_URL
-                _using_fallback = True
-                new_engine = configure_sqlite_engine(create_async_engine(_active_async_url, echo=False, future=True, connect_args={"timeout": 30.0}))
-                AsyncSessionLocal.configure(bind=new_engine)
-                # Initialize SQLite tables
-                async with new_engine.begin() as conn:
-                    await conn.run_sync(Base.metadata.create_all)
+                await switch_to_sqlite()
                 return {
                     "status": "connected_fallback",
                     "database_type": "sqlite",
@@ -162,16 +147,28 @@ async def check_db_health() -> dict:
         }
 
 async def init_db():
-    """Initializes tables on startup if using SQLite or fresh db."""
-    try:
-        # Explicitly register all relational entities on Base.metadata
-        import app.models.relational  # noqa: F401
+    """Initializes tables on startup. Verifies PostgreSQL connectivity and switches to SQLite if unreachable."""
+    global _active_async_url, _using_fallback
+    import app.models.relational  # noqa: F401
 
-        async with async_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info(f"Database schema initialized. Registered tables: {sorted(list(Base.metadata.tables.keys()))}")
-    except Exception as e:
-        logger.error(f"Database table initialization failed: {e}")
-        if settings.ENVIRONMENT == "production" or settings.DATABASE_MODE == "postgres_required":
-            raise RuntimeError(f"Production database schema initialization failed: {e}") from e
-        logger.warning(f"Auto init_db noticed: {e}")
+    if not _using_fallback and "sqlite" not in _active_async_url.lower():
+        try:
+            logger.info(f"Testing primary database connectivity ({mask_database_url(_active_async_url)})...")
+            async with async_engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Primary database schema verified and initialized.")
+            return
+        except Exception as e:
+            if settings.SQLITE_FALLBACK_ENABLED and settings.DATABASE_MODE != "postgres_required":
+                logger.warning(f"Primary PostgreSQL unreachable on startup ({e}). Automatically activating SQLite fallback.")
+                await switch_to_sqlite()
+                return
+            else:
+                logger.error(f"Primary database connection failed: {e}")
+                raise
+
+    # SQLite direct initialization
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database schema initialized.")
