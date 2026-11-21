@@ -58,14 +58,12 @@ import {
   Legend
 } from "recharts";
 import IntelligenceGraph from "@/components/IntelligenceGraph";
-import CrazyView from "@/components/CrazyView";
 import ChatBot from "@/components/ChatBot";
 import { soundFX } from "@/lib/audio";
 import { ApiClient } from "@/lib/api";
 
 type TabType =
   | "overview"
-  | "crazy_view"
   | "web_test"
   | "device_builder"
   | "android_test"
@@ -1004,20 +1002,6 @@ export default function TierLensApp() {
               Main Dashboard
             </button>
             <button
-              onClick={() => navigateToTab("crazy_view")}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition ${
-                activeTab === "crazy_view"
-                  ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-600 border border-cyan-400 font-bold shadow-sm"
-                  : "text-cyan-700 bg-cyan-50/70 hover:bg-cyan-100 hover:text-cyan-900 border border-cyan-200/80"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-cyan-500 animate-pulse shrink-0" />
-              <span>Holographic 3D View</span>
-              <span className="ml-auto text-[9px] bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold px-1.5 py-0.5 rounded-full shadow-xs">
-                CRAZY
-              </span>
-            </button>
-            <button
               onClick={() => navigateToTab("web_test")}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
                 activeTab === "web_test" ? "bg-blue-50 text-blue-600 border border-blue-200 font-semibold" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -1086,12 +1070,17 @@ export default function TierLensApp() {
             </button>
             <button
               onClick={() => navigateToTab("graph")}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
-                activeTab === "graph" ? "bg-blue-50 text-blue-600 border border-blue-200 font-semibold" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                activeTab === "graph"
+                  ? "bg-gradient-to-r from-blue-500/20 to-indigo-500/20 text-blue-600 border border-blue-300 font-bold shadow-sm"
+                  : "text-slate-700 hover:bg-blue-50 hover:text-blue-600"
               }`}
             >
-              <Database className="w-4 h-4 text-amber-400" />
-              Neo4j Intelligence Graph
+              <Database className="w-4 h-4 text-blue-500" />
+              <span>3D Visual Graph</span>
+              <span className="ml-auto text-[9px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded-full">
+                3D
+              </span>
             </button>
             <button
               onClick={() => navigateToTab("optimizations")}
@@ -1213,13 +1202,13 @@ export default function TierLensApp() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick 3D Hologram Button */}
+            {/* 3D Visual Graph Button */}
             <button
-              onClick={() => navigateToTab("crazy_view")}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold text-xs hover:from-cyan-400 hover:to-blue-500 shadow-md shadow-cyan-500/20 transition-all"
+              onClick={() => navigateToTab("graph")}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-xs hover:from-blue-500 hover:to-indigo-500 shadow-md shadow-blue-500/20 transition-all"
             >
-              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-              <span>3D Hologram</span>
+              <Database className="w-3.5 h-3.5" />
+              <span>3D Visual Graph</span>
             </button>
 
             <button
@@ -1278,19 +1267,19 @@ export default function TierLensApp() {
                 {/* Quick Action Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                   <div
-                    onClick={() => navigateToTab("crazy_view")}
-                    className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-slate-950 to-cyan-950 border border-cyan-500/50 hover:border-cyan-400 cursor-pointer transition group shadow-md shadow-cyan-500/10"
+                    onClick={() => navigateToTab("graph")}
+                    className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-slate-950 to-blue-950 border border-blue-500/50 hover:border-blue-400 cursor-pointer transition group shadow-md shadow-blue-500/10"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
-                      <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+                      <Database className="w-5 h-5 text-blue-400 animate-pulse" />
+                      <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
                     </div>
                     <div className="font-bold text-xs text-white flex items-center gap-1.5">
-                      <span>Holographic 3D View</span>
-                      <span className="text-[9px] bg-cyan-400 text-slate-950 font-black px-1.5 py-0.2 rounded">LIVE</span>
+                      <span>3D Visual Graph</span>
+                      <span className="text-[9px] bg-blue-500 text-white font-black px-1.5 py-0.2 rounded">3D</span>
                     </div>
-                    <p className="text-[11px] text-cyan-200/70 mt-1">
-                      Interactive 3D phone cockpit with live CPU throttling, RAM pressure & packet stream.
+                    <p className="text-[11px] text-blue-200/70 mt-1">
+                      Interactive 3D spatial knowledge graph with glowing nodes, depth rotation & live photon pulses.
                     </p>
                   </div>
 
@@ -1933,21 +1922,6 @@ export default function TierLensApp() {
                 </div>
               </div>
             </div>
-          )}
-
-          {/* ========================================================================= */}
-          {/* TAB: CRAZY HOLOGRAPHIC 3D VIEW */}
-          {/* ========================================================================= */}
-          {activeTab === "crazy_view" && (
-            <CrazyView
-              onRunTestWithUrl={(url, tier) => {
-                setTestUrl(url);
-                setSelectedTier(tier);
-                setActiveTab("web_test");
-              }}
-              onNavigateToTab={navigateToTab}
-              backendOnline={backendPing.ok}
-            />
           )}
 
           {/* ========================================================================= */}

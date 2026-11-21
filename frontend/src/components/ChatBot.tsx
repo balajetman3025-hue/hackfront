@@ -41,7 +41,7 @@ const DEFAULT_PROMPTS = [
   "🚀 Test https://hackfront-plum.vercel.app",
   "📱 Why do budget phones fail on heavy JavaScript?",
   "⚡ How to improve LCP & TTFB on Slow 3G?",
-  "🔮 Switch to Crazy 3D Holographic View",
+  "🔮 Explore 3D Intelligence Graph",
   "🛠️ How does CPU throttling emulation work?",
   "🩺 Check live backend health & latency",
 ];
@@ -97,12 +97,12 @@ export default function ChatBot({
       let replyText = "";
       let action: Message["action"] | undefined = undefined;
 
-      if (lower.includes("3d") || lower.includes("crazy") || lower.includes("hologram")) {
-        replyText = "🔮 **Opening the Holographic Cockpit!**\n\nThe Crazy 3D View visualizes real-time hardware emulation, including 8-core CPU workloads, RAM exhaustion simulations, and live particle network streams.";
+      if (lower.includes("3d") || lower.includes("graph") || lower.includes("visual") || lower.includes("topology") || lower.includes("hologram") || lower.includes("crazy")) {
+        replyText = "🌌 **Launching 3D Visual Intelligence Graph!**\n\nThe 3D Graph maps relationships between Projects, Hardware Profiles, Recorded Metrics, Failures, and Root Causes in a spatial 3D constellation with full orbital rotation, glowing spherical nodes, and real-time edge photon pulses.";
         action = {
           type: "navigate",
-          payload: "crazy_view",
-          label: "✨ Launch Holographic 3D View",
+          payload: "graph",
+          label: "🌌 Launch 3D Visual Graph",
         };
       } else if (lower.includes("test https://hackfront-plum.vercel.app") || lower.includes("run test") || lower.includes("benchmark")) {
         const urlMatch = textToSend.match(/https?:\/\/[^\s]+/);
@@ -162,9 +162,6 @@ export default function ChatBot({
       setIsOpen(false);
     } else if (action.type === "run_test" && onRunTestWithUrl) {
       onRunTestWithUrl(action.payload.url, action.payload.tier);
-      setIsOpen(false);
-    } else if (action.type === "navigate" && action.payload === "crazy_view" && onNavigateToTab) {
-      onNavigateToTab("crazy_view");
       setIsOpen(false);
     }
   };
